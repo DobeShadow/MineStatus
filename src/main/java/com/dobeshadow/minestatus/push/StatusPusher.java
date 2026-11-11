@@ -33,7 +33,7 @@ public class StatusPusher {
 
     private final MineStatusPlugin plugin;
     private final ConfigManager config;
-    private final HttpClient http;
+    private volatile HttpClient http;
 
     /** 上一次推送结果，供 /minestatus status 查询 */
     private volatile PushResult lastResult = PushResult.never();
@@ -41,15 +41,32 @@ public class StatusPusher {
     public StatusPusher(MineStatusPlugin plugin, ConfigManager config) {
         this.plugin = plugin;
         this.config = config;
-        this.http = config.isSkipTlsVerify()
-                ? buildInsecureClient(config.getPushTimeoutSeconds())
-                : HttpClient.newBuilder()
-                    .connectTimeout(Duration.ofSeconds(config.getPushTimeoutSeconds()))
-                    .followRedirects(HttpClient.Redirect.NORMAL)
-                    .build();
+        this.http = buildClient();
+    }
+
+    /**
+     * 按当前配置重建 HTTP 客户端。
+     * <p>
+     * 必须在 reload 时调用：否则修改了 skip-tls-verify / 超时等配置，旧客户端不会生效。
+     */
+    public void reloadClient() {
+        this.http = buildClient();
+        if (config.isDebug()) {
+            plugin.getLogger().info("推送客户端已按新配置重建（skip-tls-verify=" + config.isSkipTlsVerify()
+                    + "，超时=" + config.getPushTimeoutSeconds() + "s）。");
+        }
+    }
+
+    private HttpClient buildClient() {
         if (config.isSkipTlsVerify()) {
             plugin.getLogger().warning("已启用 skip-tls-verify：将跳过 HTTPS 证书校验，请仅在证书异常时临时使用。");
+            return buildInsecureClient(config.getPushTimeoutSeconds());
         }
+        return HttpClient.newBuilder()
+                .version(HttpClient.Version.HTTP_1_1)
+                .connectTimeout(Duration.ofSeconds(config.getPushTimeoutSeconds()))
+                .followRedirects(HttpClient.Redirect.NORMAL)
+                .build();
     }
 
     /**
@@ -84,6 +101,7 @@ public class StatusPusher {
             params.setEndpointIdentificationAlgorithm(null); // 关闭主机名校验
 
             return HttpClient.newBuilder()
+                    .version(HttpClient.Version.HTTP_1_1)
                     .connectTimeout(Duration.ofSeconds(timeoutSeconds))
                     .followRedirects(HttpClient.Redirect.NORMAL)
                     .sslContext(sslContext)
@@ -141,7 +159,7 @@ public class StatusPusher {
                         }
                         result = PushResult.success(code, playerCount, json.length());
                     } else {
-                        result = PushResult.failed("HTTP " + code);
+                        result = PushResult.failed("HTTP " + code + " @ " + config.getEndpoint());
                     }
                     lastResult = result;
                     if (config.isDebug()) {
@@ -151,7 +169,8 @@ public class StatusPusher {
                 })
                 .exceptionally(throwable -> {
                     Throwable cause = throwable.getCause() != null ? throwable.getCause() : throwable;
-                    PushResult result = PushResult.failed(cause.getClass().getSimpleName() + ": " + cause.getMessage());
+                    PushResult result = PushResult.failed(cause.getClass().getSimpleName() + ": " + cause.getMessage()
+                            + " @ " + config.getEndpoint());
                     lastResult = result;
                     if (config.isDebug()) {
                         plugin.getLogger().warning("推送失败: " + result.message());

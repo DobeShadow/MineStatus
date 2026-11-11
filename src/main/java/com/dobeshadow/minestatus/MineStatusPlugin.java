@@ -232,6 +232,8 @@ public class MineStatusPlugin extends JavaPlugin implements Listener {
     public void reloadPluginConfig() {
         configManager.load();
         skinService.clearCache();
+        // 关键：按新配置重建推送客户端，否则 skip-tls-verify / 超时等修改不会生效
+        statusPusher.reloadClient();
         startPushTask();
     }
 
