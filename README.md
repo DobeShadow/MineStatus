@@ -21,7 +21,7 @@
 
 | 项 | 要求 |
 | --- | --- |
-| 服务端 | Purpur / Paper / Spigot 1.20.x |
+| 服务端 | Purpur / Paper 1.21.x（已在 Purpur 1.21.11 编译验证） |
 | Java | 17+（推荐 21） |
 | 依赖插件 | 无（SkinsRestorer 可选，装了效果更好） |
 

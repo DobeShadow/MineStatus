@@ -1,7 +1,7 @@
 name: MineStatus
 version: '1.0.0'
 main: com.dobeshadow.minestatus.MineStatusPlugin
-api-version: '1.20'
+api-version: '1.21'
 authors: ['DobeShadow']
 description: '采集在线玩家（名字+头像）并推送到 WIKI 状态页'
 commands:
