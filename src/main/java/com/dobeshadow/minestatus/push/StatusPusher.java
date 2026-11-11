@@ -3,12 +3,18 @@ package com.dobeshadow.minestatus.push;
 import com.dobeshadow.minestatus.MineStatusPlugin;
 import com.dobeshadow.minestatus.config.ConfigManager;
 
+import javax.net.ssl.SSLContext;
+import javax.net.ssl.SSLParameters;
+import javax.net.ssl.TrustManager;
+import javax.net.ssl.X509TrustManager;
 import java.net.URI;
 import java.net.URLEncoder;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
+import java.security.SecureRandom;
+import java.security.cert.X509Certificate;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
@@ -35,10 +41,57 @@ public class StatusPusher {
     public StatusPusher(MineStatusPlugin plugin, ConfigManager config) {
         this.plugin = plugin;
         this.config = config;
-        this.http = HttpClient.newBuilder()
-                .connectTimeout(Duration.ofSeconds(config.getPushTimeoutSeconds()))
-                .followRedirects(HttpClient.Redirect.NORMAL)
-                .build();
+        this.http = config.isSkipTlsVerify()
+                ? buildInsecureClient(config.getPushTimeoutSeconds())
+                : HttpClient.newBuilder()
+                    .connectTimeout(Duration.ofSeconds(config.getPushTimeoutSeconds()))
+                    .followRedirects(HttpClient.Redirect.NORMAL)
+                    .build();
+        if (config.isSkipTlsVerify()) {
+            plugin.getLogger().warning("已启用 skip-tls-verify：将跳过 HTTPS 证书校验，请仅在证书异常时临时使用。");
+        }
+    }
+
+    /**
+     * 构建跳过 TLS 证书校验的客户端（信任所有证书 + 关闭主机名校验）。
+     * <p>
+     * 仅用于目标站点证书异常（过期 / 域名不匹配）且暂时无法修复的场景。
+     * 存在中间人攻击的理论风险，证书修好后请把 skip-tls-verify 改回 false。
+     */
+    private static HttpClient buildInsecureClient(int timeoutSeconds) {
+        try {
+            TrustManager[] trustAll = new TrustManager[]{
+                    new X509TrustManager() {
+                        @Override
+                        public X509Certificate[] getAcceptedIssuers() {
+                            return new X509Certificate[0];
+                        }
+
+                        @Override
+                        public void checkClientTrusted(X509Certificate[] chain, String authType) {
+                            // 不校验
+                        }
+
+                        @Override
+                        public void checkServerTrusted(X509Certificate[] chain, String authType) {
+                            // 不校验
+                        }
+                    }
+            };
+            SSLContext sslContext = SSLContext.getInstance("TLS");
+            sslContext.init(null, trustAll, new SecureRandom());
+            SSLParameters params = new SSLParameters();
+            params.setEndpointIdentificationAlgorithm(null); // 关闭主机名校验
+
+            return HttpClient.newBuilder()
+                    .connectTimeout(Duration.ofSeconds(timeoutSeconds))
+                    .followRedirects(HttpClient.Redirect.NORMAL)
+                    .sslContext(sslContext)
+                    .sslParameters(params)
+                    .build();
+        } catch (Exception e) {
+            throw new IllegalStateException("初始化 skip-tls-verify 客户端失败", e);
+        }
     }
 
     /**

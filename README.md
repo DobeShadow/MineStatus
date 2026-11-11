@@ -61,6 +61,27 @@ token: "你的随机长串"
 
 ---
 
+## 常见问题
+
+### 推送报 `SSLHandshakeException: certificate_expired` / 证书校验失败
+
+说明目标站点证书异常（过期、或证书域名不匹配），Java 的 TLS 校验会正确拒绝。两种处理：
+
+1. **临时绕过**（证书暂时修不了时）：`config.yml` 里把 `skip-tls-verify` 设为 `true`
+   ```yaml
+   skip-tls-verify: true
+   ```
+   这会让 HTTPS 跳过证书校验。**存在中间人攻击的理论风险**，证书修好后请改回 `false`。
+2. **改走 HTTP**：把 `endpoint` 换成 `http://...`（需确保服务器出方向 80 端口可用；部分云主机会拦 80）。
+
+> 根本解决：在主机面板给域名申请/上传有效证书（如 Let's Encrypt），然后保持 `https://` + `skip-tls-verify: false`。
+
+### 推送报 `HttpTimeoutException: request timed out`
+
+通常是服务器出方向到目标端口的网络被拦（例如 80 端口不通），或目标站点响应过慢。优先确认 443 可达；必要时调大 `push-timeout-seconds`。
+
+---
+
 ## 命令
 
 | 命令 | 说明 | 权限 |

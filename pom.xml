@@ -6,7 +6,7 @@
 
     <groupId>com.dobeshadow</groupId>
     <artifactId>MineStatus</artifactId>
-    <version>1.0.0</version>
+    <version>1.0.1</version>
     <packaging>jar</packaging>
     <name>MineStatus</name>
     <description>采集在线玩家（名字+头像）并推送到 WIKI / NamelessMC 状态页</description>

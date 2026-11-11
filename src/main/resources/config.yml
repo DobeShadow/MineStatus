@@ -30,5 +30,10 @@ skin-download-timeout-seconds: 5
 # 推送请求超时（秒）
 push-timeout-seconds: 5
 
+# 是否跳过 TLS 证书校验
+# 仅当目标站点证书确实有问题（过期/域名不匹配）且暂时无法修复时开启。
+# 开启后存在被中间人攻击的理论风险，证书修好后请改回 false。
+skip-tls-verify: false
+
 # 是否输出调试日志
 debug: false

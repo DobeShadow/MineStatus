@@ -1,5 +1,5 @@
 name: MineStatus
-version: '1.0.0'
+version: '1.0.1'
 main: com.dobeshadow.minestatus.MineStatusPlugin
 api-version: '1.21'
 authors: ['DobeShadow']

@@ -25,6 +25,7 @@ public class ConfigManager {
     private int skinCacheMinutes;
     private int skinDownloadTimeoutSeconds;
     private int pushTimeoutSeconds;
+    private boolean skipTlsVerify;
     private boolean debug;
 
     public ConfigManager(MineStatusPlugin plugin) {
@@ -47,6 +48,7 @@ public class ConfigManager {
         this.skinCacheMinutes = Math.max(0, cfg.getInt("skin-cache-minutes", 60));
         this.skinDownloadTimeoutSeconds = Math.max(1, cfg.getInt("skin-download-timeout-seconds", 5));
         this.pushTimeoutSeconds = Math.max(1, cfg.getInt("push-timeout-seconds", 5));
+        this.skipTlsVerify = cfg.getBoolean("skip-tls-verify", false);
         this.debug = cfg.getBoolean("debug", false);
     }
 
@@ -99,6 +101,10 @@ public class ConfigManager {
 
     public int getPushTimeoutSeconds() {
         return pushTimeoutSeconds;
+    }
+
+    public boolean isSkipTlsVerify() {
+        return skipTlsVerify;
     }
 
     public boolean isDebug() {
