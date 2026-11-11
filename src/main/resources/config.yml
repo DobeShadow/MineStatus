@@ -1,0 +1,34 @@
+# ============================================================
+#  MineStatus 配置文件
+#  配置结构变更时请同步修改 config-version，插件会据此提示旧配置
+# ============================================================
+
+# 配置版本号（请勿手动修改，除非你清楚自己在做什么）
+config-version: 1
+
+# 是否启用自动推送（关闭后仅 /minestatus push 可手动推送）
+enabled: true
+
+# 自动推送间隔（秒），最小 1
+interval-seconds: 5
+
+# 接收数据的 PHP 接口地址（不含 ?token=）
+endpoint: "https://www.minemc.asia/status-ingest.php"
+
+# 与 PHP 中 TOKEN 常量保持一致的随机长串（建议 32 位以上）
+token: "CHANGE_ME_请替换为随机长串"
+
+# 单次推送最多携带的玩家数量（超出部分截断）
+max-players-in-payload: 100
+
+# 头像（皮肤面部）缓存时长（分钟），0 表示不缓存
+skin-cache-minutes: 60
+
+# 皮肤下载超时（秒）
+skin-download-timeout-seconds: 5
+
+# 推送请求超时（秒）
+push-timeout-seconds: 5
+
+# 是否输出调试日志
+debug: false

@@ -1,0 +1,196 @@
+<!--
+  ============================================================
+  ServerStatus.vue 改动参考片段
+  ============================================================
+  说明：这不是完整文件，而是需要替换/新增的部分。
+  请对照你现有的 ServerStatus.vue 做对应修改。
+
+  核心改动：
+  1. 数据源从 /status-api.php 改为 /status-cache.json
+  2. 玩家头像直接使用 p.head（base64 data URI）
+  3. 头像加载失败时替换为站点 favicon
+  ============================================================
+-->
+
+<!-- ========== 模板部分 ========== -->
+<template>
+  <div class="server-status">
+    <!-- 在线状态 -->
+    <div class="status-header">
+      <span :class="['status-dot', data.online ? 'online' : 'offline']"></span>
+      <span class="status-text">
+        {{ data.online ? '服务器在线' : '服务器当前离线' }}
+      </span>
+    </div>
+
+    <!-- 人数与版本 -->
+    <div v-if="data.online" class="status-info">
+      <span>在线人数：{{ data.players.length }} / {{ data.max }}</span>
+      <span>版本：{{ data.version }}</span>
+    </div>
+
+    <!-- 玩家头像列表 -->
+    <div v-if="data.online && data.players.length" class="player-list">
+      <div
+        v-for="p in data.players"
+        :key="p.uuid || p.name"
+        class="player-item"
+      >
+        <img
+          :src="p.head || fallbackHead"
+          :alt="p.name"
+          :title="p.name"
+          class="player-head"
+          loading="lazy"
+          @error="onHeadError"
+        />
+        <span class="player-name">{{ p.name }}</span>
+      </div>
+    </div>
+
+    <div v-else-if="data.online" class="no-players">
+      当前没有玩家在线
+    </div>
+  </div>
+</template>
+
+<!-- ========== 脚本部分 ========== -->
+<script setup>
+import { ref, onMounted, onUnmounted } from 'vue'
+
+// 头像加载失败时的兜底图（站点 favicon）
+const fallbackHead = '/wiki/favicon.png'
+
+const data = ref({
+  online: false,
+  time: 0,
+  max: 0,
+  version: '',
+  players: []
+})
+
+let timer = null
+
+async function fetchStatus() {
+  try {
+    // 带时间戳避免浏览器/CDN 缓存
+    const res = await fetch('/status-cache.json?t=' + Date.now(), {
+      cache: 'no-store'
+    })
+    if (!res.ok) throw new Error('HTTP ' + res.status)
+    const json = await res.json()
+    data.value = {
+      online: !!json.online,
+      time: json.time || 0,
+      max: json.max || 0,
+      version: json.version || '',
+      players: Array.isArray(json.players) ? json.players : []
+    }
+  } catch (e) {
+    // 拉取失败视为离线
+    data.value = {
+      online: false,
+      time: 0,
+      max: 0,
+      version: '',
+      players: []
+    }
+  }
+}
+
+function onHeadError(event) {
+  const img = event.target
+  if (img.src !== fallbackHead) {
+    img.src = fallbackHead
+  }
+}
+
+onMounted(() => {
+  fetchStatus()
+  // 每 10 秒轮询一次（插件每 5 秒推一次）
+  timer = setInterval(fetchStatus, 10000)
+})
+
+onUnmounted(() => {
+  if (timer) clearInterval(timer)
+})
+</script>
+
+<!-- ========== 样式部分 ========== -->
+<style scoped>
+.server-status {
+  padding: 16px;
+}
+
+.status-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.status-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.status-dot.online {
+  background: #4caf50;
+  box-shadow: 0 0 6px #4caf50;
+}
+
+.status-dot.offline {
+  background: #f44336;
+}
+
+.status-info {
+  display: flex;
+  gap: 24px;
+  margin: 12px 0;
+  color: #666;
+  font-size: 14px;
+}
+
+.player-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.player-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  width: 64px;
+}
+
+.player-head {
+  width: 48px;
+  height: 48px;
+  border-radius: 8px;
+  object-fit: cover;
+  image-rendering: pixelated;
+  background: #eee;
+}
+
+.player-name {
+  font-size: 12px;
+  color: #333;
+  max-width: 64px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: center;
+}
+
+.no-players {
+  margin-top: 16px;
+  color: #999;
+  font-size: 14px;
+}
+</style>
