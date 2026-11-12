@@ -2,6 +2,7 @@ package com.dobeshadow.minestatus.command;
 
 import com.dobeshadow.minestatus.MineStatusPlugin;
 import com.dobeshadow.minestatus.push.StatusPusher;
+import com.dobeshadow.minestatus.skin.HeadCache;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;
@@ -21,7 +22,7 @@ import java.util.Locale;
  */
 public class MineStatusCommand implements CommandExecutor, TabCompleter {
 
-    private static final List<String> SUB_COMMANDS = List.of("push", "reload", "status");
+    private static final List<String> SUB_COMMANDS = List.of("push", "reload", "status", "heads");
 
     private final MineStatusPlugin plugin;
 
@@ -60,6 +61,15 @@ public class MineStatusCommand implements CommandExecutor, TabCompleter {
                     sender.sendMessage("§e提醒：endpoint 或 token 尚未正确配置，自动推送将被跳过。");
                 }
             }
+            case "heads" -> {
+                HeadCache hc = plugin.getHeadCache();
+                sender.sendMessage("§6===== 玩家头像历史缓存 =====");
+                sender.sendMessage("§7已缓存玩家: §f" + hc.size() + " / "
+                        + plugin.getConfigManager().getHeadCacheMaxPlayers());
+                sender.sendMessage("§7待推送到网页: §f" + (hc.isDirty() ? "是（下轮推送带上）" : "否"));
+                sender.sendMessage("§7持久化文件: §fplugins/MineStatus/heads.json");
+                sender.sendMessage("§7新玩家上线后会自动记录，离线玩家在榜单即可显示真实皮肤。");
+            }
             case "status" -> {
                 StatusPusher.PushResult last = plugin.getStatusPusher().getLastResult();
                 sender.sendMessage("§6===== MineStatus 状态 =====");
@@ -83,6 +93,7 @@ public class MineStatusCommand implements CommandExecutor, TabCompleter {
         sender.sendMessage("§e/" + label + " push §7- 立即推送一次");
         sender.sendMessage("§e/" + label + " reload §7- 重载配置并重置定时器");
         sender.sendMessage("§e/" + label + " status §7- 查看当前状态");
+        sender.sendMessage("§e/" + label + " heads §7- 查看玩家头像历史缓存");
     }
 
     @Override

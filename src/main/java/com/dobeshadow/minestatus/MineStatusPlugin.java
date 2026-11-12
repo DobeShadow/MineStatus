@@ -5,6 +5,7 @@ import com.dobeshadow.minestatus.collect.PlayerSnapshotService.PlayerInfo;
 import com.dobeshadow.minestatus.command.MineStatusCommand;
 import com.dobeshadow.minestatus.config.ConfigManager;
 import com.dobeshadow.minestatus.push.StatusPusher;
+import com.dobeshadow.minestatus.skin.HeadCache;
 import com.dobeshadow.minestatus.skin.SkinService;
 import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
@@ -35,6 +36,8 @@ public class MineStatusPlugin extends JavaPlugin implements Listener {
     private PlayerSnapshotService snapshotService;
     private SkinService skinService;
     private StatusPusher statusPusher;
+    /** 跨重启持久化的玩家头像历史（老玩家离线后榜单仍能显示真实皮肤） */
+    private HeadCache headCache;
 
     /** 当前定时任务句柄，reload 时需要取消重建 */
     private BukkitTask pushTask;
@@ -62,6 +65,8 @@ public class MineStatusPlugin extends JavaPlugin implements Listener {
         this.snapshotService = new PlayerSnapshotService(this, configManager);
         this.skinService = new SkinService(this, configManager);
         this.statusPusher = new StatusPusher(this, configManager);
+        this.headCache = new HeadCache(getDataFolder().toPath(), getLogger(),
+                configManager.isDebug(), configManager.getHeadCacheMaxPlayers());
 
         // 3. 命令
         MineStatusCommand command = new MineStatusCommand(this);
@@ -96,6 +101,9 @@ public class MineStatusPlugin extends JavaPlugin implements Listener {
         if (skinExecutor != null) {
             skinExecutor.shutdownNow();
             skinExecutor = null;
+        }
+        if (headCache != null) {
+            headCache.saveIfNeeded();
         }
         getLogger().info("MineStatus 已禁用。");
     }
@@ -137,8 +145,21 @@ public class MineStatusPlugin extends JavaPlugin implements Listener {
         Bukkit.getScheduler().runTaskAsynchronously(this, () -> {
             try {
                 fillHeads(players, root);
+                headCache.saveIfNeeded();
+
+                // 有新采集到的头像才附带 heads 字段；PHP 端是合并语义，
+                // 日常推送不会拖着几百 KB 的历史库反复上传
+                boolean withHeads = headCache.isDirty();
+                long pushedVersion = headCache.currentVersion();
+                if (withHeads) {
+                    root.put("heads", headCache.snapshot());
+                }
+
                 // 等待推送真正完成后再释放锁，避免网络慢时任务堆积
-                statusPusher.pushAsync(root).join();
+                StatusPusher.PushResult result = statusPusher.pushAsync(root).join();
+                if (withHeads && result.success()) {
+                    headCache.markPushed(pushedVersion);
+                }
             } catch (Throwable t) {
                 if (configManager.isDebug()) {
                     getLogger().warning("定时推送异常: " + t.getMessage());
@@ -176,8 +197,13 @@ public class MineStatusPlugin extends JavaPlugin implements Listener {
                     if (player == null || !player.isOnline()) {
                         return;
                     }
-                    String head = skinService.getHeadDataUri(player);
-                    entry.put("head", head == null ? "" : head);
+                    // 只接受真实采集到的皮肤；采集失败留空，由 PHP 用默认头替换，
+                    // 绝不把兜底 Steve 或异常立绘写进历史缓存
+                    String head = skinService.getRealHeadDataUri(player);
+                    if (head != null && !head.isEmpty()) {
+                        entry.put("head", head);
+                        headCache.put(info.name(), head);
+                    }
                 } catch (Throwable t) {
                     if (configManager.isDebug()) {
                         getLogger().warning("补全头像失败: " + info.name() + " - " + t.getMessage());
@@ -215,7 +241,16 @@ public class MineStatusPlugin extends JavaPlugin implements Listener {
             StatusPusher.PushResult result;
             try {
                 fillHeads(players, root);
+                headCache.saveIfNeeded();
+                boolean withHeads = headCache.isDirty();
+                long pushedVersion = headCache.currentVersion();
+                if (withHeads) {
+                    root.put("heads", headCache.snapshot());
+                }
                 result = statusPusher.pushAsync(root).join();
+                if (withHeads && result.success()) {
+                    headCache.markPushed(pushedVersion);
+                }
             } catch (Throwable t) {
                 result = StatusPusher.PushResult.failed(t.getClass().getSimpleName() + ": " + t.getMessage());
             } finally {
@@ -260,6 +295,10 @@ public class MineStatusPlugin extends JavaPlugin implements Listener {
 
     public SkinService getSkinService() {
         return skinService;
+    }
+
+    public HeadCache getHeadCache() {
+        return headCache;
     }
 
     public StatusPusher getStatusPusher() {

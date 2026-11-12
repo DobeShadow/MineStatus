@@ -62,24 +62,28 @@ public class SkinService {
     }
 
     /**
-     * 为玩家构建头像 data URI。
+     * 采集玩家的「真实」头像 data URI。
      * <p>
-     * 调用链：皮肤纹理 → mc-heads.net 兜底 → 内置默认头像。
+     * 与 {@link #getHeadDataUri(Player)} 的区别：本方法在任何一步都失败时
+     * 返回 null，<b>不会</b>返回内置默认头。调用方据此判断能否写进历史缓存，
+     * 避免把兜底 Steve 头当成玩家真实皮肤固化下来。
+     * <p>
+     * 调用链：玩家 profile 皮肤纹理 → mc-heads.net 头像。
      *
      * @param player 玩家（异步线程读取其 profile）
-     * @return 形如 {@code data:image/png;base64,...} 的字符串，永不返回 null
+     * @return 真实头像 data URI，采集失败返回 null
      */
-    public String getHeadDataUri(Player player) {
+    public String getRealHeadDataUri(Player player) {
         String uuid = player.getUniqueId().toString();
         String name = player.getName();
 
-        // 1. 尝试从玩家 profile 取皮肤纹理 URL
+        // 1. 尝试从玩家 profile 取皮肤纹理 URL（离线服 + SkinsRestorer 时可用）
         URL skinUrl = resolveSkinUrl(player);
         String cacheKey = uuid + ":" + (skinUrl != null ? skinUrl.toString().hashCode() : "fallback");
 
         CacheEntry cached = cache.get(cacheKey);
         if (cached != null && !cached.isExpired(config.getSkinCacheMinutes())) {
-            return cached.dataUri;
+            return cached.real ? cached.dataUri : null;
         }
 
         // 2. 下载并裁面部（皮肤纹理图，需要裁 (8,8,8,8)）
@@ -88,18 +92,24 @@ public class SkinService {
             result = downloadAndCrop(skinUrl.toString(), true);
         }
 
-        // 3. 兜底：mc-heads.net 按名字取 64x64 头像（已经是头像，直接放大）
+        // 3. 兜底：mc-heads.net 按名字取 64x64 头像（已经是头像，直接缩放）
         if (result == null) {
             result = downloadAndCrop(buildMcHeadsUrl(name), false);
         }
 
-        // 4. 最终兜底：内置默认头像
-        if (result == null) {
-            result = getDefaultHeadDataUri();
-        }
+        boolean real = result != null;
+        // 失败也缓存一小段时间，避免每轮推送都重复外连超时
+        cache.put(cacheKey, new CacheEntry(real ? result : "", System.currentTimeMillis(), real));
+        return real ? result : null;
+    }
 
-        cache.put(cacheKey, new CacheEntry(result, System.currentTimeMillis()));
-        return result;
+    /**
+     * 为玩家构建头像 data URI（含内置默认兜底），永不返回 null。
+     * 保留给其他可能调用的地方；推送链路改用 {@link #getRealHeadDataUri(Player)}。
+     */
+    public String getHeadDataUri(Player player) {
+        String real = getRealHeadDataUri(player);
+        return real != null ? real : getDefaultHeadDataUri();
     }
 
     /**
@@ -147,8 +157,26 @@ public class SkinService {
             if (image == null) {
                 return null;
             }
+            // 标准皮肤是 64x64（新版）或 64x32（老版）。若拿到尺寸更小的图，
+            // 多半是「已渲染的人物立绘」而非皮肤贴图，绝不能整图缩放当头像
+            // （这正是之前 SiriusBlack 显示成一整个人的原因）。
+            if (isSkinTexture && (image.getWidth() < 64 || image.getHeight() < 32)) {
+                if (config.isDebug()) {
+                    plugin.getLogger().warning("皮肤图尺寸异常，跳过: " + image.getWidth()
+                            + "x" + image.getHeight() + " @ " + url);
+                }
+                return null;
+            }
             BufferedImage head = cropFace(image, isSkinTexture);
-            return toDataUri(head);
+            String uri = toDataUri(head);
+            // 8x8 像素脸放大后 PNG 通常 < 1KB；体积过大说明带抗锯齿/渐变，不是像素脸
+            if (uri.length() > HeadCache.MAX_HEAD_URI_LENGTH) {
+                if (config.isDebug()) {
+                    plugin.getLogger().warning("头像体积异常，跳过: " + uri.length() + " 字符 @ " + url);
+                }
+                return null;
+            }
+            return uri;
         } catch (Exception e) {
             if (config.isDebug()) {
                 plugin.getLogger().warning("头像处理失败: " + url + " - " + e.getMessage());
@@ -197,8 +225,8 @@ public class SkinService {
         int w = source.getWidth();
         int h = source.getHeight();
 
-        if (isSkinTexture && w >= 64 && h >= 64) {
-            // 标准皮肤图：裁面部
+        if (isSkinTexture && w >= 64 && h >= 32) {
+            // 标准皮肤图（64x64 新版 / 64x32 老版）：头部区域都在 (8,8,8,8)
             face = source.getSubimage(FACE_X, FACE_Y, FACE_SIZE, FACE_SIZE);
         } else {
             // 已经是头像图或尺寸不明：整图缩放
@@ -283,10 +311,13 @@ public class SkinService {
     private static final class CacheEntry {
         final String dataUri;
         final long createdAt;
+        /** false 表示这是「采集失败」的负缓存，不能写进历史头像库 */
+        final boolean real;
 
-        CacheEntry(String dataUri, long createdAt) {
+        CacheEntry(String dataUri, long createdAt, boolean real) {
             this.dataUri = dataUri;
             this.createdAt = createdAt;
+            this.real = real;
         }
 
         boolean isExpired(int cacheMinutes) {

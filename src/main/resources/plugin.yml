@@ -1,13 +1,13 @@
 name: MineStatus
-version: '1.0.2'
+version: '1.1.0'
 main: com.dobeshadow.minestatus.MineStatusPlugin
 api-version: '1.21'
 authors: ['DobeShadow']
-description: '采集在线玩家（名字+头像）并推送到 WIKI 状态页'
+description: '采集在线玩家（名字+头像）并推送到 WIKI 状态页，持久化玩家头像历史'
 commands:
   minestatus:
-    description: 手动推送 / 重载配置 / 查看状态
-    usage: /minestatus <push|reload|status>
+    description: 手动推送 / 重载配置 / 查看状态 / 查看头像缓存
+    usage: /minestatus <push|reload|status|heads>
     permission: minestatus.admin
 permissions:
   minestatus.admin:

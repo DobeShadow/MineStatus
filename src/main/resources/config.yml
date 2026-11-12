@@ -21,6 +21,12 @@ token: "CHANGE_ME_请替换为随机长串"
 # 单次推送最多携带的玩家数量（超出部分截断）
 max-players-in-payload: 100
 
+# 历史头像库最多保留多少名玩家（跨重启持久化，供离线玩家在榜单显示真实皮肤）
+# 玩家在线时采集到的真实头像会写入 plugins/MineStatus/heads.json，
+# 仅在有新增/变化时才随状态推送一起发给网页，PHP 端做合并。
+# 超出上限时淘汰最久未更新的玩家。旧配置文件缺此项时默认 500。
+head-cache-max-players: 500
+
 # 头像（皮肤面部）缓存时长（分钟），0 表示不缓存
 skin-cache-minutes: 60
 

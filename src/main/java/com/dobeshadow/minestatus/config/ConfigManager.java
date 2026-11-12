@@ -22,6 +22,7 @@ public class ConfigManager {
     private String endpoint;
     private String token;
     private int maxPlayersInPayload;
+    private int headCacheMaxPlayers;
     private int skinCacheMinutes;
     private int skinDownloadTimeoutSeconds;
     private int pushTimeoutSeconds;
@@ -45,6 +46,7 @@ public class ConfigManager {
         this.endpoint = cfg.getString("endpoint", "");
         this.token = cfg.getString("token", "");
         this.maxPlayersInPayload = Math.max(1, cfg.getInt("max-players-in-payload", 100));
+        this.headCacheMaxPlayers = Math.max(1, cfg.getInt("head-cache-max-players", 500));
         this.skinCacheMinutes = Math.max(0, cfg.getInt("skin-cache-minutes", 60));
         this.skinDownloadTimeoutSeconds = Math.max(1, cfg.getInt("skin-download-timeout-seconds", 5));
         this.pushTimeoutSeconds = Math.max(1, cfg.getInt("push-timeout-seconds", 5));
@@ -89,6 +91,11 @@ public class ConfigManager {
 
     public int getMaxPlayersInPayload() {
         return maxPlayersInPayload;
+    }
+
+    /** 历史头像库最多保留多少名玩家，超出按最近更新时间淘汰最老的 */
+    public int getHeadCacheMaxPlayers() {
+        return headCacheMaxPlayers;
     }
 
     public int getSkinCacheMinutes() {

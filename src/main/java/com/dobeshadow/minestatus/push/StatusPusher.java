@@ -189,13 +189,14 @@ public class StatusPusher {
      *   "time": long,
      *   "max": int,
      *   "version": string,
-     *   "players": [ { "name": string, "uuid": string, "head": string } ]
+     *   "players": [ { "name": string, "uuid": string, "head": string } ],
+     *   "heads": { "name": "data:image/png;base64,..." }   // 可选，仅缓存有变化时
      * }
      * </pre>
      */
     @SuppressWarnings("unchecked")
     private String toJson(Map<String, Object> data) {
-        StringBuilder sb = new StringBuilder(512);
+        StringBuilder sb = new StringBuilder(4096);
         sb.append('{');
 
         sb.append("\"online\":").append(Boolean.TRUE.equals(data.get("online")));
@@ -224,6 +225,27 @@ public class StatusPusher {
             }
         }
         sb.append(']');
+
+        // 可选的玩家头像历史库：只有采集到新头像时才带上，PHP 端做合并
+        Object headsObj = data.get("heads");
+        if (headsObj instanceof Map<?, ?> heads && !heads.isEmpty()) {
+            sb.append(",\"heads\":{");
+            boolean firstHead = true;
+            for (Map.Entry<?, ?> e : heads.entrySet()) {
+                String name = asString(e.getKey());
+                String head = asString(e.getValue());
+                if (name.isEmpty() || head.isEmpty()) {
+                    continue;
+                }
+                if (!firstHead) {
+                    sb.append(',');
+                }
+                firstHead = false;
+                sb.append('"').append(escape(name)).append("\":\"")
+                        .append(escape(head)).append('"');
+            }
+            sb.append('}');
+        }
 
         sb.append('}');
         return sb.toString();

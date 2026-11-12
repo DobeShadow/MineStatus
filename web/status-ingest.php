@@ -17,8 +17,11 @@ header('Cache-Control: no-store');
 // ============ 配置区 ============
 const TOKEN = 'CHANGE_ME_请替换为与插件一致的随机长串';
 const CACHE_FILE = __DIR__ . '/status-cache.json';
-const MAX_BYTES = 262144;   // 请求体上限 256KB
+const MAX_BYTES = 1048576;  // 请求体上限 1MB（首次推送可能携带全量历史头像）
 const MAX_PLAYERS = 100;    // 最多保留玩家数
+// 玩家头像历史库：插件只在有新采集时附带 heads 字段，这里做合并持久化
+const HEADS_FILE = __DIR__ . '/status-heads.json';
+const MAX_CACHED_HEADS = 2000;
 
 // 可选：IP 白名单（填你的 MC 服务器出口 IP，留空表示不限制）
 const ALLOWED_IPS = [];
@@ -99,6 +102,18 @@ if (!is_array($data) || !isset($data['players']) || !is_array($data['players']))
 }
 
 // ---- 7. 清洗字段（防注入 / 防超长） ----
+// MineStatus 对少数自定义皮肤会把「整张皮肤 / 渲染立绘」当成头像塞进来
+// （带抗锯齿、几百种颜色、~2900 字符），正常 8x8 像素脸只有 ~600-900 字符。
+// 这类异常头像在网页上会显示成一整个人，统一换成默认 Steve 头。
+$defaultHead = '';
+$defaultHeadFile = __DIR__ . '/default-head.png';
+if (is_file($defaultHeadFile)) {
+    $rawHead = @file_get_contents($defaultHeadFile);
+    if ($rawHead !== false && substr($rawHead, 0, 8) === "\x89PNG\r\n\x1a\n") {
+        $defaultHead = 'data:image/png;base64,' . base64_encode($rawHead);
+    }
+}
+
 $clean = [
     'online'  => (bool)($data['online'] ?? false),
     'time'    => (int)($data['time'] ?? time()),
@@ -122,9 +137,13 @@ foreach ($data['players'] as $p) {
     if ($head !== '' && !preg_match('#^(data:image/[a-z]+;base64,|https?://)#i', $head)) {
         $head = '';
     }
-    // 头像体积上限（约 8KB base64）
-    if (strlen($head) > 8192) {
+    // 头像体积上限；超过 1600 字符基本可判定不是 8x8 像素头像
+    if (strlen($head) > 1600) {
         $head = '';
+    }
+    // 没有头像（或被上面拦掉）时用默认 Steve 头，避免前端兜底到 403 的第三方站
+    if ($head === '' && $defaultHead !== '') {
+        $head = $defaultHead;
     }
 
     $clean['players'][] = [
@@ -132,6 +151,51 @@ foreach ($data['players'] as $p) {
         'uuid' => $uuid,
         'head' => $head,
     ];
+}
+
+// 在线人数（以实际玩家列表为准，避免上游未提供时为空）
+$clean['numplayers'] = count($clean['players']);
+
+// ---- 7.5 合并玩家头像历史库 ----
+// 离线服玩家在 Mojang / minotar 查不到皮肤，网页侧只能显示默认 Steve。
+// MineStatus 1.1.0 起会把「在线时采集到的真实头像」按名字累积并推送，
+// 这里合并进独立文件，供排行榜 / head.php 给离线玩家补真头像。
+// 注意：绝不写进 status-cache.json，否则 WIKI 状态页会把离线玩家当成在线。
+if (isset($data['heads']) && is_array($data['heads'])) {
+    $stored = [];
+    if (is_file(HEADS_FILE)) {
+        $prev = json_decode((string)@file_get_contents(HEADS_FILE), true);
+        if (is_array($prev) && isset($prev['heads']) && is_array($prev['heads'])) {
+            $stored = $prev['heads'];
+        }
+    }
+    foreach ($data['heads'] as $hName => $hUri) {
+        if (!is_string($hName) || !preg_match('/^[A-Za-z0-9_]{1,32}$/', $hName)) {
+            continue;
+        }
+        if (!is_string($hUri) || strlen($hUri) > 1600
+            || !preg_match('#^data:image/png;base64,[A-Za-z0-9+/=]+$#', $hUri)) {
+            continue;
+        }
+        $stored[$hName] = $hUri;   // 同名覆盖：玩家换皮肤后以最新为准
+    }
+    if (count($stored) > MAX_CACHED_HEADS) {
+        $stored = array_slice($stored, -MAX_CACHED_HEADS, null, true);
+    }
+    $headsJson = json_encode([
+        'time'  => time(),
+        'count' => count($stored),
+        'heads' => $stored,
+    ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    if ($headsJson !== false) {
+        $hTmp = HEADS_FILE . '.tmp';
+        if (@file_put_contents($hTmp, $headsJson, LOCK_EX) !== false) {
+            @chmod($hTmp, 0644);
+            if (!@rename($hTmp, HEADS_FILE)) {
+                @unlink($hTmp);
+            }
+        }
+    }
 }
 
 // ---- 8. 原子写入 ----
